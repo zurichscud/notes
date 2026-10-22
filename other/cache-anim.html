@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>协商缓存 · 动画</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+
+  .wrap {
+    --ink: var(--foreground, #17181d);
+    --ink-soft: var(--muted-foreground, #6b7280);
+    --bg: var(--background, #ffffff);
+    --hair: var(--border, rgba(20, 22, 28, .13));
+    --accent: var(--chart-1, #3b66f5);
+    --good: var(--success, #0b8a5f);
+    --mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    --sans: var(--font-sans, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif);
+    position: relative;
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    padding: 2px 0 6px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: var(--mono); font-size: .94em; }
+
+  /* header */
+  .head { position: relative; }
+  .kicker { display: flex; align-items: center; gap: .45rem; font-family: var(--mono); font-size: .6rem; letter-spacing: .15em; text-transform: uppercase; color: var(--ink-soft); }
+  .kicker .kdot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+  .htitle { position: relative; margin-top: .2rem; display: flex; align-items: baseline; gap: .55rem; }
+  h1 { margin: 0; font-size: clamp(1.35rem, 4.6vw, 1.7rem); font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
+  h1 .en { font-family: var(--mono); font-size: .48em; font-weight: 500; letter-spacing: .06em; color: var(--ink-soft); }
+  .ghost { position: absolute; right: 0; top: -.5em; font-family: var(--mono); font-size: 3.1rem; font-weight: 700; letter-spacing: -.06em; line-height: 1; color: var(--ink); opacity: .05; user-select: none; pointer-events: none; transition: color .4s, opacity .4s; }
+  .wrap.done .ghost { color: var(--good); opacity: .11; }
+  .sub { margin: .5rem 0 0; max-width: 56em; font-size: .79rem; line-height: 1.62; color: var(--ink-soft); }
+  .sub b { color: var(--ink); font-weight: 550; white-space: nowrap; }
+  .sub { text-wrap: pretty; }
+  .sub .mono { color: var(--ink); }
+
+  /* toolbar */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .95rem; }
+  .tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--hair); border-radius: 999px; background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  .tab { appearance: none; border: 0; background: transparent; color: var(--ink-soft); font-family: var(--mono); font-size: .64rem; letter-spacing: .01em; padding: .32rem .7rem; border-radius: 999px; cursor: pointer; transition: color .2s, background .2s; }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .replay { appearance: none; display: inline-flex; align-items: center; gap: .32rem; border: 1px solid var(--hair); background: transparent; color: var(--ink-soft); font-family: var(--mono); font-size: .64rem; padding: .34rem .68rem; border-radius: 999px; cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
+  .replay svg { width: .82rem; height: .82rem; }
+  .replay:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 26%, var(--hair)); background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  .tab:focus-visible, .replay:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* narration */
+  .narr { display: flex; align-items: flex-start; gap: .65rem; margin-top: .8rem; min-height: 2.5em; }
+  .step { flex: none; padding-top: .2em; font-family: var(--mono); font-size: .62rem; letter-spacing: .06em; color: var(--accent); font-variant-numeric: tabular-nums; }
+  #cap { margin: 0; font-size: .78rem; line-height: 1.55; color: var(--ink); }
+  #cap b { font-weight: 600; }
+
+  /* sequence stage */
+  .stage { position: relative; margin-top: .35rem; padding: 42px 0 8px; }
+  .actor { position: absolute; top: 0; transform: translateX(-50%); display: flex; align-items: center; gap: .34rem; font-size: .66rem; color: var(--ink-soft); white-space: nowrap; z-index: 2; }
+  .actor .ico { display: grid; place-items: center; width: 1.55rem; height: 1.55rem; border: 1px solid var(--hair); border-radius: .45rem; color: var(--ink); background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .actor .ico svg { width: .85rem; height: .85rem; }
+  .a1 { left: 14%; }
+  .a2 { left: 86%; }
+  .lane { position: absolute; top: 36px; bottom: 2px; border-left: 1px dashed color-mix(in srgb, var(--ink) 18%, transparent); }
+  .lane.l1 { left: 14%; }
+  .lane.l2 { left: 86%; }
+
+  .msg { position: relative; height: 48px; }
+  .msg .label { position: absolute; left: 0; right: 0; top: 1px; text-align: center; font-size: .7rem; line-height: 1.3; color: var(--ink-soft); white-space: nowrap; opacity: 0; }
+  .msg.on .label { animation: labelIn .3s ease-out .06s forwards; }
+  .msg .label .status { font-weight: 600; color: var(--ink); font-size: .98em; }
+  .msg .label .status.good { color: var(--good); }
+  .msg .label .path { font-family: var(--mono); font-size: .92em; color: var(--ink); }
+  .msg .label .mono { color: var(--ink); }
+  .msg .label .sep { margin: 0 .34em; font-style: normal; color: color-mix(in srgb, var(--ink-soft) 65%, transparent); }
+  .msg .label .sz { margin-left: .6em; font-family: var(--mono); font-size: .86em; color: var(--ink-soft); }
+  .msg .label .sz.good { color: var(--good); }
+
+  .arrow { position: absolute; left: 14%; width: 72%; top: 29px; height: 8px; color: var(--accent); }
+  .msg.notmod .arrow { color: var(--good); }
+  .arrow .line { position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: currentColor; transform: scaleX(0); }
+  .msg.req .line { transform-origin: left center; }
+  .msg.res .line { transform-origin: right center; }
+  .msg.cond .line { height: 0; background: none; border-top: 1px dashed currentColor; }
+  .msg.on .line { animation: drawLine .5s cubic-bezier(.3, .7, .35, 1) forwards; }
+  .arrow::after { content: ""; position: absolute; top: 4px; margin-top: -4px; border-style: solid; border-color: transparent; opacity: 0; }
+  .msg.req .arrow::after { right: -1px; border-width: 4px 0 4px 7px; border-left-color: currentColor; }
+  .msg.res .arrow::after { left: -1px; border-width: 4px 7px 4px 0; border-right-color: currentColor; }
+  .msg.on .arrow::after { animation: tipIn .16s ease-out .38s forwards; }
+  .pkt { position: absolute; left: 0; top: 4px; margin-top: -3px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 15%, transparent), 0 0 10px color-mix(in srgb, currentColor 40%, transparent); }
+  .msg.on.req .pkt { animation: travelR .5s cubic-bezier(.3, .7, .35, 1) forwards; }
+  .msg.on.res .pkt { animation: travelL .5s cubic-bezier(.3, .7, .35, 1) forwards; }
+
+  /* bottom panels */
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin-top: .8rem; }
+  .panel { min-width: 0; padding: .7rem .8rem .72rem; border: 1px solid var(--hair); border-radius: .8rem; background: color-mix(in srgb, var(--ink) 2.5%, transparent); transition: background .35s, border-color .35s; }
+  .panel.filled { border-color: color-mix(in srgb, var(--accent) 20%, var(--hair)); background: color-mix(in srgb, var(--accent) 4%, transparent); }
+  .panel.hit { border-color: color-mix(in srgb, var(--good) 34%, var(--hair)); background: color-mix(in srgb, var(--good) 6%, transparent); animation: ring .8s ease-out; }
+  .ph { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .pt { font-family: var(--mono); font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; }
+  .badge { flex: none; font-family: var(--mono); font-size: .58rem; line-height: 1.4; padding: .15em .5em; border: 1px solid var(--hair); border-radius: 999px; color: var(--ink-soft); white-space: nowrap; transition: color .25s, border-color .25s, background .25s, opacity .3s; }
+  .badge.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 36%, transparent); background: color-mix(in srgb, var(--good) 10%, transparent); }
+  .entry { display: flex; align-items: baseline; gap: .5rem; min-width: 0; margin-top: .5rem; }
+  .fname { flex: none; font-size: .76rem; color: var(--ink-soft); transition: color .3s; }
+  .panel.filled .fname, .panel.hit .fname { color: var(--ink); }
+  .fmeta { flex: 1; min-width: 0; font-size: .64rem; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hint { margin-top: .35rem; font-size: .63rem; line-height: 1.45; color: var(--ink-soft); }
+  .mrow { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) 3.7rem; align-items: center; gap: .45rem; margin-top: .5rem; }
+  .mrow + .mrow { margin-top: .38rem; }
+  .mk { font-family: var(--mono); font-size: .6rem; color: var(--ink-soft); }
+  .track { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 7%, transparent); overflow: hidden; }
+  .track i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .55s cubic-bezier(.3, .7, .35, 1); }
+  .track i.good { background: var(--good); }
+  .mv { text-align: right; font-family: var(--mono); font-size: .6rem; color: var(--ink-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  @keyframes labelIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes drawLine { to { transform: scaleX(1); } }
+  @keyframes tipIn { to { opacity: 1; } }
+  @keyframes travelR {
+    0% { left: 0; opacity: 0; transform: scale(.4); }
+    14% { opacity: 1; transform: scale(1); }
+    82% { opacity: 1; }
+    100% { left: calc(100% - 6px); opacity: 0; transform: scale(.7); }
+  }
+  @keyframes travelL {
+    0% { left: calc(100% - 6px); opacity: 0; transform: scale(.4); }
+    14% { opacity: 1; transform: scale(1); }
+    82% { opacity: 1; }
+    100% { left: 0; opacity: 0; transform: scale(.7); }
+  }
+  @keyframes ring {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 30%, transparent); }
+    100% { box-shadow: 0 0 0 10px transparent; }
+  }
+
+  .wrap.instant *, .wrap.instant *::before, .wrap.instant *::after { animation: none !important; transition: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    .pkt { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <header class="head">
+    <div class="kicker"><span class="kdot"></span>HTTP CACHE · 条件请求</div>
+    <div class="htitle">
+      <h1>协商缓存 <span class="en">conditional get</span></h1>
+      <span class="ghost" aria-hidden="true">304</span>
+    </div>
+    <p class="sub">强缓存过期后，浏览器不会直接重下文件，而是先问服务器：<b>内容变了吗？</b>没变就只回 <span class="mono">304</span>，正文 0 字节。</p>
+  </header>
+
+  <div class="bar">
+    <div class="tabs" role="group" aria-label="校验方式">
+      <button type="button" class="tab" data-mode="etag" aria-pressed="true">ETag</button>
+      <button type="button" class="tab" data-mode="lastmod" aria-pressed="false">Last-Modified</button>
+    </div>
+    <button type="button" class="replay" id="replay">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+      重播
+    </button>
+  </div>
+
+  <div class="narr" aria-live="polite">
+    <span class="step" id="stepNum">01</span>
+    <p id="cap">缓存里没有副本：请求直接发往服务器，不带条件头。</p>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="actor a1">
+      <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M6.5 6.5h.01M9.5 6.5h.01"/></svg></span>
+      浏览器
+    </div>
+    <div class="actor a2">
+      <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5"/><path d="M7 7.2h.01M7 16.8h.01"/></svg></span>
+      服务器
+    </div>
+    <div class="lane l1"></div>
+    <div class="lane l2"></div>
+
+    <div class="msg req">
+      <div class="label" id="label1">GET <span class="path">/app.js</span></div>
+      <div class="arrow"><span class="line"></span><span class="pkt"></span></div>
+    </div>
+    <div class="msg res">
+      <div class="label" id="label2"><span class="status">200 OK</span><i class="sep">·</i><span class="mono">ETag: "v1"</span><span class="sz">24 KB</span></div>
+      <div class="arrow"><span class="line"></span><span class="pkt"></span></div>
+    </div>
+    <div class="msg req cond">
+      <div class="label" id="label3"><span class="mono">If-None-Match: "v1"</span></div>
+      <div class="arrow"><span class="line"></span><span class="pkt"></span></div>
+    </div>
+    <div class="msg res notmod">
+      <div class="label" id="label4"><span class="status good">304 Not Modified</span><i class="sep">·</i><span class="sz good">0 B 正文</span></div>
+      <div class="arrow"><span class="line"></span><span class="pkt"></span></div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <section class="panel" id="cachePanel" aria-label="浏览器缓存">
+      <div class="ph"><span class="pt">浏览器缓存</span><span class="badge" id="cacheBadge">空</span></div>
+      <div class="entry">
+        <span class="fname mono" id="cacheFile">app.js</span>
+        <span class="fmeta mono" id="cacheMeta">—</span>
+      </div>
+      <div class="hint" id="cacheHint">暂无副本，等待第一次响应</div>
+    </section>
+    <section class="panel" aria-label="网络传输量">
+      <div class="ph"><span class="pt">网络传输</span><span class="badge" id="saveBadge" style="opacity:0">对比</span></div>
+      <div class="mrow"><span class="mk">首次</span><span class="track"><i id="bar1"></i></span><span class="mv" id="b1">—</span></div>
+      <div class="mrow"><span class="mk">再次</span><span class="track"><i class="good" id="bar2"></i></span><span class="mv" id="b2">—</span></div>
+      <div class="hint">304 只传响应头，不重复传正文</div>
+    </section>
+  </div>
+</div>
+
+<noscript>
+  <style>
+    .msg .label { opacity: 1 !important; }
+    .msg .line { transform: none !important; }
+    .msg .arrow::after { opacity: 1 !important; }
+    .pkt { display: none; }
+  </style>
+</noscript>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+
+  var wrap = $('#wrap');
+  var msgs = $$('.msg');
+  var cap = $('#cap');
+  var stepNum = $('#stepNum');
+  var cachePanel = $('#cachePanel');
+  var cacheFile = $('#cacheFile');
+  var cacheMeta = $('#cacheMeta');
+  var cacheHint = $('#cacheHint');
+  var cacheBadge = $('#cacheBadge');
+  var bar1 = $('#bar1');
+  var bar2 = $('#bar2');
+  var b1 = $('#b1');
+  var b2 = $('#b2');
+  var saveBadge = $('#saveBadge');
+  var label1 = $('#label1');
+  var label2 = $('#label2');
+  var label3 = $('#label3');
+
+  var MODES = {
+    etag: {
+      file: 'app.js',
+      resp: '<span class="status">200 OK</span><i class="sep">·</i><span class="mono">ETag: "v1"</span><span class="sz">24 KB</span>',
+      cond: '<span class="mono">If-None-Match: "v1"</span>',
+      meta: 'ETag "v1"',
+      metaFull: 'ETag: "v1"',
+      cacheHint: '文件与 ETag 已写入',
+      titleResp: '响应头：ETag: "v1"',
+      titleCond: '请求头：If-None-Match: "v1"',
+      cap2: '服务器返回 <b>200</b> 与 ETag，浏览器把文件连同校验标识一起存进缓存。',
+      cap3: '再次访问：浏览器带上 <b>If-None-Match</b>，问服务器内容变没变。'
+    },
+    lastmod: {
+      file: 'app.js',
+      resp: '<span class="status">200 OK</span><i class="sep">·</i><span class="mono">Last-Modified: Wed, 21 Oct 2026 07:28:00 GMT</span><span class="sz">24 KB</span>',
+      cond: '<span class="mono">If-Modified-Since: Wed, 21 Oct 2026 07:28:00 GMT</span>',
+      meta: 'Last-Modified 07:28:00 GMT',
+      metaFull: 'Last-Modified: Wed, 21 Oct 2026 07:28:00 GMT',
+      cacheHint: '文件与修改时间已写入',
+      titleResp: '响应头：Last-Modified: Wed, 21 Oct 2026 07:28:00 GMT',
+      titleCond: '请求头：If-Modified-Since: Wed, 21 Oct 2026 07:28:00 GMT',
+      cap2: '服务器返回 <b>200</b> 与 Last-Modified，浏览器把文件连同修改时间一起存进缓存。',
+      cap3: '再次访问：浏览器带上 <b>If-Modified-Since</b>，问服务器内容变没变。'
+    }
+  };
+
+  var mode = 'etag';
+  var timers = [];
+  var rafId = 0;
+
+  function stopAll() {
+    timers.forEach(function (id) { clearTimeout(id); });
+    timers = [];
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  }
+
+  function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+
+  function setCaption(n, html, animate) {
+    stepNum.textContent = n < 10 ? '0' + n : String(n);
+    cap.innerHTML = html;
+    if (animate && typeof cap.animate === 'function') {
+      cap.animate(
+        [{ opacity: 0, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        { duration: 240, easing: 'ease-out' }
+      );
+    }
+  }
+
+  function caps() {
+    var d = MODES[mode];
+    return [
+      '缓存里没有副本：请求直接发往服务器，不带条件头。',
+      d.cap2,
+      d.cap3,
+      '内容没变：服务器只回 <b>304 Not Modified</b>，浏览器复用本地副本，正文 0 字节。'
+    ];
+  }
+
+  function applyMode(next) {
+    mode = next;
+    var d = MODES[next];
+    label1.innerHTML = 'GET <span class="path">/' + d.file + '</span>';
+    label2.innerHTML = d.resp;
+    label3.innerHTML = d.cond;
+    label2.title = d.titleResp;
+    label3.title = d.titleCond;
+    cacheFile.textContent = d.file;
+  }
+
+  function reset() {
+    stopAll();
+    wrap.classList.add('instant');
+    wrap.classList.remove('done');
+    msgs.forEach(function (m) { m.classList.remove('on'); });
+    cachePanel.classList.remove('filled', 'hit');
+    cacheBadge.className = 'badge';
+    cacheBadge.textContent = '空';
+    cacheMeta.textContent = '—';
+    cacheMeta.removeAttribute('title');
+    cacheHint.textContent = '暂无副本，等待第一次响应';
+    b1.textContent = '—';
+    b2.textContent = '—';
+    bar1.style.width = '0%';
+    bar2.style.width = '0%';
+    saveBadge.className = 'badge';
+    saveBadge.textContent = '对比';
+    saveBadge.style.opacity = '0';
+    setCaption(1, caps()[0], false);
+    void wrap.offsetWidth;
+    wrap.classList.remove('instant');
+  }
+
+  function countTo(el, target, duration, digits) {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    var settled = false;
+    var finalText = target.toFixed(digits) + ' KB';
+    var start = performance.now();
+    function finish() {
+      if (settled) { return; }
+      settled = true;
+      el.textContent = finalText;
+    }
+    timers.push(setTimeout(finish, duration + 150));
+    function frame(now) {
+      if (settled) { return; }
+      var k = Math.min(1, (now - start) / duration);
+      var eased = 1 - Math.pow(1 - k, 3);
+      el.textContent = (target * eased).toFixed(digits) + ' KB';
+      if (k < 1) { rafId = requestAnimationFrame(frame); }
+      else { finish(); rafId = 0; }
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function fillCache() {
+    var d = MODES[mode];
+    cachePanel.classList.add('filled');
+    cacheBadge.textContent = '已缓存';
+    cacheMeta.textContent = d.meta;
+    cacheMeta.title = d.metaFull || d.meta;
+    cacheHint.textContent = d.cacheHint;
+    bar1.style.width = '100%';
+    countTo(b1, 24, 520, 0);
+  }
+
+  function cacheHit() {
+    cachePanel.classList.add('hit');
+    cacheBadge.textContent = '304 命中';
+    cacheBadge.classList.add('ok');
+    cacheHint.textContent = '未传正文，继续用本地副本';
+    bar2.style.width = '2%';
+    countTo(b2, 0.3, 480, 1);
+    saveBadge.textContent = '省 98.8%';
+    saveBadge.classList.add('ok');
+    saveBadge.style.opacity = '1';
+    wrap.classList.add('done');
+  }
+
+  function play() {
+    reset();
+    var c = caps();
+    at(280, function () { msgs[0].classList.add('on'); });
+    at(1100, function () { setCaption(2, c[1], true); msgs[1].classList.add('on'); });
+    at(1650, fillCache);
+    at(2650, function () { setCaption(3, c[2], true); msgs[2].classList.add('on'); });
+    at(3900, function () { setCaption(4, c[3], true); msgs[3].classList.add('on'); });
+    at(4500, cacheHit);
+  }
+
+  $$('.tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (btn.dataset.mode === mode) { return; }
+      $$('.tab').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      applyMode(btn.dataset.mode);
+      play();
+    });
+  });
+
+  $('#replay').addEventListener('click', play);
+
+  applyMode('etag');
+  reset();
+  setTimeout(play, 600);
+})();
+</script>
+</body>
+</html>
